@@ -1,3 +1,10 @@
+# FAISS DB & Metadata (로컬 생성 파일)
+*.index
+*.npy
+
+# Windows OS 찌꺼기 파일 제외
+desktop.ini
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
