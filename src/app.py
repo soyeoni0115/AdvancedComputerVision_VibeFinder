@@ -1,4 +1,70 @@
+import json
+from pathlib import Path
+
 import streamlit as st
+
+
+st.set_page_config(
+    page_title="Vibe Finder",
+    layout="wide"
+)
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+RAW_IMAGE_DIR = DATA_DIR / "raw"
+METADATA_PATH = DATA_DIR / "metadata.json"
+
+
+@st.cache_data
+def load_metadata():
+    with METADATA_PATH.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    cafes = []
+    for item in data.values():
+        cafes.append(
+            {
+                "image_path": item.get("image_path", ""),
+                "img_name": item.get("img_name", ""),
+                "tags": item.get("tags", []),
+                "location": item.get("location", ""),
+            }
+        )
+    return cafes
+
+
+def get_all_tags(cafes):
+    tags = set()
+    for cafe in cafes:
+        tags.update(cafe["tags"])
+    return sorted(tags)
+
+
+def find_best_cafes(cafes, selected_tags):
+    selected_tag_set = set(selected_tags)
+    scored_cafes = []
+
+    for cafe in cafes:
+        matched_tags = selected_tag_set.intersection(cafe["tags"])
+        if matched_tags:
+            scored_cafes.append(
+                {
+                    **cafe,
+                    "match_count": len(matched_tags),
+                    "matched_tags": sorted(matched_tags),
+                }
+            )
+
+    if not scored_cafes:
+        return []
+
+    best_score = max(cafe["match_count"] for cafe in scored_cafes)
+    return [cafe for cafe in scored_cafes if cafe["match_count"] == best_score]
+
+
+cafes = load_metadata()
+available_tags = get_all_tags(cafes)
 
 # session_state 초기화
 if "recommended_tags" not in st.session_state:
@@ -7,11 +73,8 @@ if "recommended_tags" not in st.session_state:
 if "selected_tags" not in st.session_state:
     st.session_state.selected_tags = []
 
-# 페이지 기본 설정
-st.set_page_config(
-    page_title="Vibe Finder",
-    layout="wide"
-)
+if "search_results" not in st.session_state:
+    st.session_state.search_results = []
 
 # CSS 스타일 적용
 st.markdown("""
@@ -118,28 +181,8 @@ with right:
     # 분위기 추천 버튼
     if st.button('분위기 추천 키워드로 골라보기'):
 
-        # 나중에는 AI 추천 결과로 변경 가능
-        st.session_state.recommended_tags = [
-            "조용한",
-            "감성",
-            "우드톤",
-            "디저트맛집",
-            "공부하기좋은",
-            "인스타감성",
-            "일하기 좋은",
-            "커피가 맛있는",
-            "안락한",
-            "베이커리",
-            "깔끔",
-            "디저트",
-            "원두선택",
-            "노트북작업",
-            "모임",
-            "루프탑",
-            "대화",
-            "데이트",
-            "편안한"
-        ]
+        # metadata.json에 실제로 존재하는 태그를 보여줍니다.
+        st.session_state.recommended_tags = available_tags
 
 
     # 추천 태그 출력
@@ -202,12 +245,42 @@ with right:
             # FAISS 검색용 쿼리 생성
             query = " ".join(st.session_state.selected_tags)
     if search_clicked:
-        st.success(
-            f"선택된 분위기 태그로 검색합니다"
+        st.session_state.search_results = find_best_cafes(
+            cafes,
+            st.session_state.selected_tags
         )
+
+        if st.session_state.selected_tags:
+            st.success("선택된 분위기 태그로 검색합니다")
+        else:
+            st.warning("태그를 먼저 선택해주세요.")
 
             # 여기서 FAISS 검색 연결 예정
             # query_embedding = model.encode(query)
             # D, I = index.search(query_embedding, k=5)
 
     st.markdown('</div>', unsafe_allow_html=True)
+
+    if st.session_state.search_results:
+        st.write("### 추천 카페")
+
+        for cafe in st.session_state.search_results:
+            image_file = RAW_IMAGE_DIR / cafe["image_path"]
+
+            col_img, col_info = st.columns([1, 2])
+            with col_img:
+                if image_file.exists():
+                    st.image(str(image_file), use_container_width=True)
+                else:
+                    st.warning(f"이미지를 찾을 수 없습니다: {cafe['image_path']}")
+
+            with col_info:
+                st.subheader(cafe["img_name"])
+                st.write(f"주소: {cafe['location']}")
+                st.write(
+                    "일치한 태그: "
+                    + " ".join(f"#{tag}" for tag in cafe["matched_tags"])
+                )
+
+    elif search_clicked and st.session_state.selected_tags:
+        st.info("선택한 태그와 일치하는 카페를 찾지 못했습니다.")
