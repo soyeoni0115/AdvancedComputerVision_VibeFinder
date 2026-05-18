@@ -25,15 +25,24 @@ st.markdown("""
 
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
+    padding-top: 150px;  
 }
 
 .title {
-    font-size: 7vw;
+    font-size: 6vw;
     font-family: serif;
     line-height: 0.9;
+    opacity: 0;
+    transform: translateY(50px);
+    animation: fadeUp 1s ease-out forwards;
 }
-
+@keyframes fadeUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 .center-box {
     margin-top: 120px;
 }
@@ -104,6 +113,7 @@ with right:
     )
     #줄글
     vibe = st.text_input("", placeholder="예: 조용한, 감성적인, 공부하기 좋은")
+    
 
     # 분위기 추천 버튼
     if st.button('분위기 추천 키워드로 골라보기'):
