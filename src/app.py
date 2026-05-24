@@ -1,286 +1,145 @@
-import json
-from pathlib import Path
+import streamlit as st  # Streamlit UI 라이브러리
+import numpy as np  # 벡터 연산용
+import faiss  # 벡터 검색 라이브러리
+import psycopg2  # PostgreSQL 연결 라이브러리
+from pathlib import Path  # 파일 경로 처리
+from utils import CLIPEmbedding  # CLIP 모델 (직접 만든 클래스)
 
-import streamlit as st
-
+# -------------------------------
+# 1. 기본 설정
+# -------------------------------
 
 st.set_page_config(
-    page_title="Vibe Finder",
-    layout="wide"
+    page_title="Vibe Finder",  # 페이지 제목
+    layout="wide"  # 전체 화면 사용
 )
 
-
+# 프로젝트 경로 설정
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-RAW_IMAGE_DIR = DATA_DIR / "raw"
-METADATA_PATH = DATA_DIR / "metadata.json"
+RAW_IMAGE_DIR = BASE_DIR / "data" / "raw"
 
+# -------------------------------
+# 2. CLIP 모델 로드
+# -------------------------------
 
-@st.cache_data
-def load_metadata():
-    with METADATA_PATH.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+clip_model = CLIPEmbedding()  # 텍스트 → 벡터 변환용
 
-    cafes = []
-    for item in data.values():
-        cafes.append(
-            {
-                "image_path": item.get("image_path", ""),
-                "img_name": item.get("img_name", ""),
-                "tags": item.get("tags", []),
-                "location": item.get("location", ""),
-            }
-        )
-    return cafes
+# -------------------------------
+# 3. FAISS 인덱스 로드
+# -------------------------------
 
+index = faiss.read_index(
+    str(BASE_DIR / "faiss_vibe.index")  # 미리 만들어둔 벡터 DB
+)
 
-def get_all_tags(cafes):
-    tags = set()
-    for cafe in cafes:
-        tags.update(cafe["tags"])
-    return sorted(tags)
+# -------------------------------
+# 4. PostgreSQL 연결
+# -------------------------------
 
+conn = psycopg2.connect(
+    dbname="vibe",      # DB 이름
+    user="user",        # 사용자
+    password="pass",    # 비밀번호
+    host="localhost",   # 로컬 서버
+    port="5432"         # 포트
+)
 
-def find_best_cafes(cafes, selected_tags):
-    selected_tag_set = set(selected_tags)
-    scored_cafes = []
+cur = conn.cursor()  # 쿼리 실행 객체
 
-    for cafe in cafes:
-        matched_tags = selected_tag_set.intersection(cafe["tags"])
-        if matched_tags:
-            scored_cafes.append(
-                {
-                    **cafe,
-                    "match_count": len(matched_tags),
-                    "matched_tags": sorted(matched_tags),
-                }
+# -------------------------------
+# 5. UI 구성
+# -------------------------------
+
+# 제목
+st.title("Vibe Finder")
+
+# 사용자 입력 받기
+vibe = st.text_input(
+    "원하는 분위기를 입력하세요",
+    placeholder="예: 따뜻한 감성 카페, 공부하기 좋은 곳"
+)
+
+# -------------------------------
+# 6. 검색 버튼 클릭 시 실행
+# -------------------------------
+
+if st.button("검색 시작"):
+
+    # 입력이 비어있지 않을 경우
+    if vibe.strip():
+
+        # -------------------------------
+        # (1) 텍스트 → 벡터 변환
+        # -------------------------------
+
+        query_embedding = clip_model.get_text_embedding(vibe)
+
+        # FAISS 입력 형식 맞추기 (2차원 배열)
+        query_embedding = np.expand_dims(query_embedding, axis=0)
+
+        # -------------------------------
+        # (2) FAISS에서 유사 이미지 검색
+        # -------------------------------
+
+        D, I = index.search(query_embedding, k=5)  # Top-5 검색
+
+        results = []  # 결과 저장 리스트
+
+        # -------------------------------
+        # (3) PostgreSQL에서 정보 가져오기
+        # -------------------------------
+
+        for idx in I[0]:  # 검색된 이미지 id 순회
+
+            # DB에서 해당 id 데이터 조회
+            cur.execute(
+                """
+                SELECT cafe_name, address, map_url, image_path
+                FROM cafes
+                WHERE id = %s
+                """,
+                (int(idx),)
             )
 
-    if not scored_cafes:
-        return []
+            row = cur.fetchone()  # 한 줄 가져오기
 
-    best_score = max(cafe["match_count"] for cafe in scored_cafes)
-    return [cafe for cafe in scored_cafes if cafe["match_count"] == best_score]
+            # 결과가 존재하면 리스트에 추가
+            if row:
+                results.append({
+                    "cafe_name": row[0],   # 카페 이름
+                    "address": row[1],     # 주소
+                    "map_url": row[2],     # 지도 링크
+                    "image_path": row[3]   # 이미지 파일 경로
+                })
 
+        # -------------------------------
+        # (4) 결과 출력
+        # -------------------------------
 
-cafes = load_metadata()
-available_tags = get_all_tags(cafes)
+        if results:
+            st.write("### 추천 카페")
 
-# session_state 초기화
-if "recommended_tags" not in st.session_state:
-    st.session_state.recommended_tags = []
+            for cafe in results:
 
-if "selected_tags" not in st.session_state:
-    st.session_state.selected_tags = []
+                # 이미지 파일 경로
+                image_file = RAW_IMAGE_DIR / cafe["image_path"]
 
-if "search_results" not in st.session_state:
-    st.session_state.search_results = []
+                # 좌우 레이아웃
+                col1, col2 = st.columns([1, 2])
 
-# CSS 스타일 적용
-st.markdown("""
-<style>
-.main {
-    background-color: #f5f5f5;
-}
-
-.title-container {
-    height: 100vh;
-
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding-top: 150px;  
-}
-
-.title {
-    font-size: 6vw;
-    font-family: serif;
-    line-height: 0.9;
-    opacity: 0;
-    transform: translateY(50px);
-    animation: fadeUp 1s ease-out forwards;
-}
-@keyframes fadeUp {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.center-box {
-    margin-top: 120px;
-}
-
-.desc {
-    font-size: 36px;
-    text-align: center;
-    margin-bottom: 20px;
-}
-
-.subdesc {
-    font-size: 24px;
-    text-align: center;
-    margin-bottom: 40px;
-}
-
-.stTextInput input {
-    background-color: #c7d8d1;
-    border-radius: 5px;
-    height: 50px;
-    font-size: 20px;
-}
-
-.stSelectbox div[data-baseweb="select"] {
-    border-radius: 20px;
-}
-
-.button-container {
-    display: flex;
-    justify-content: center;
-    margin-top: 30px;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-
-# 좌우 레이아웃
-left, right = st.columns([1, 2])
-
-
-
-
-# 왼쪽 타이틀
-with left:
-
-    st.markdown("""
-    <div class="title-container">
-        <div class="title">
-            Vibe<br>Finder
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# 오른쪽 입력 영역
-with right:
-    st.markdown('<div class="center-box">', unsafe_allow_html=True)
-
-    st.markdown(
-        '<div class="desc">원하는 분위기를 입력하세요</div>',
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        '<div class="subdesc">분위기에 맞는 카페를 추천해드립니다</div>',
-        unsafe_allow_html=True
-    )
-    #줄글
-    vibe = st.text_input("", placeholder="예: 조용한, 감성적인, 공부하기 좋은")
-    
-
-    # 분위기 추천 버튼
-    if st.button('분위기 추천 키워드로 골라보기'):
-
-        # metadata.json에 실제로 존재하는 태그를 보여줍니다.
-        st.session_state.recommended_tags = available_tags
-
-
-    # 추천 태그 출력
-    if st.session_state.recommended_tags:
-
-        st.write("### 추천 태그")
-
-        # 한 줄에 5개씩
-        cols = st.columns(5)
-
-        for idx, tag in enumerate(st.session_state.recommended_tags):
-
-            with cols[idx % 5]:
-
-                # 현재 선택 여부
-                selected = tag in st.session_state.selected_tags
-
-                # 선택 여부에 따라 버튼 색 변경
-                button_type = "primary" if selected else "secondary"
-
-                # 태그 버튼
-                if st.button(
-                    f"#{tag}",
-                    key=f"tag_{tag}",
-                    type=button_type,
-                    use_container_width=True
-                ):
-
-                    # 토글 기능
-                    if selected:
-                        st.session_state.selected_tags.remove(tag)
-
+                with col1:
+                    if image_file.exists():
+                        st.image(str(image_file), use_container_width=True)
                     else:
-                        st.session_state.selected_tags.append(tag)
+                        st.warning("이미지를 찾을 수 없음")
 
-                    st.rerun()
+                with col2:
+                    st.subheader(cafe["cafe_name"])
+                    st.write(f"주소: {cafe['address']}")
+                    st.write(f"[지도 보기]({cafe['map_url']})")
 
-
-    # 현재 선택된 태그 확인
-    if st.session_state.selected_tags:
-
-        st.write("### 선택된 태그")
-
-        selected_text = " ".join(
-            [f"#{tag}" for tag in st.session_state.selected_tags]
-        )
-
-        st.write(selected_text)
-
-
-    # 검색 버튼
-    st.markdown('<div class="button-container">', unsafe_allow_html=True)
-
-    empty, button_col = st.columns([8, 1])
-    search_clicked = False
-    with button_col:
-
-        if st.button("검색시작"):
-            search_clicked = True
-            # FAISS 검색용 쿼리 생성
-            query = " ".join(st.session_state.selected_tags)
-    if search_clicked:
-        st.session_state.search_results = find_best_cafes(
-            cafes,
-            st.session_state.selected_tags
-        )
-
-        if st.session_state.selected_tags:
-            st.success("선택된 분위기 태그로 검색합니다")
         else:
-            st.warning("태그를 먼저 선택해주세요.")
+            st.warning("검색 결과가 없습니다.")
 
-            # 여기서 FAISS 검색 연결 예정
-            # query_embedding = model.encode(query)
-            # D, I = index.search(query_embedding, k=5)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    if st.session_state.search_results:
-        st.write("### 추천 카페")
-
-        for cafe in st.session_state.search_results:
-            image_file = RAW_IMAGE_DIR / cafe["image_path"]
-
-            col_img, col_info = st.columns([1, 2])
-            with col_img:
-                if image_file.exists():
-                    st.image(str(image_file), use_container_width=True)
-                else:
-                    st.warning(f"이미지를 찾을 수 없습니다: {cafe['image_path']}")
-
-            with col_info:
-                st.subheader(cafe["img_name"])
-                st.write(f"주소: {cafe['location']}")
-                st.write(
-                    "일치한 태그: "
-                    + " ".join(f"#{tag}" for tag in cafe["matched_tags"])
-                )
-
-    elif search_clicked and st.session_state.selected_tags:
-        st.info("선택한 태그와 일치하는 카페를 찾지 못했습니다.")
+    else:
+        st.warning("검색어를 입력하세요.")

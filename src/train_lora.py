@@ -78,7 +78,7 @@ def train_lora_clip():
         print(f"📉 Epoch {epoch+1} Average Loss: {total_loss / len(dataloader):.4f}")
         
     # 💾 학습이 끝난 가벼운 LoRA 가중치만 따로 저장! (수십 MB 수준)
-    model.save_pretrained("models/lora_weights")
+    model.save_pretrained("models/lora_weights_v1")
     print("✅ LoRA 가중치 저장 완료! -> models/lora_weights")
 
 if __name__ == "__main__":
