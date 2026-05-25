@@ -9,10 +9,10 @@ from model_utils import get_lora_clip_model
 # ---------------------------
 # 0. 설정
 # ---------------------------
-IMAGE_DIR = "cafe_images"  # 🔥 이미지 폴더
+IMAGE_DIR = "cafe_images"
 
 DB_CONFIG = {
-    "host": "ep-xxx.neon.tech",
+    "host": "ep-misty-mud-aogsqtmk-pooler.c-2.ap-southeast-1.aws.neon.tech",
     "database": "neondb",
     "user": "neondb_owner",
     "password": "npg_eHtYc0ABqF5k",
@@ -22,7 +22,7 @@ DB_CONFIG = {
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ---------------------------
-# 1. Dataset (DB 기반)
+# 1. Dataset
 # ---------------------------
 class CafeDataset(Dataset):
     def __init__(self, processor):
@@ -42,16 +42,17 @@ class CafeDataset(Dataset):
 
     def __getitem__(self, idx):
         image_name, caption = self.data[idx]
-
-        # 🔥 파일명 + 폴더 합치기
         full_path = os.path.join(IMAGE_DIR, image_name)
 
-        # 🔥 예외 처리
+        # ❌ 재귀 제거
         if not os.path.exists(full_path):
-            return self.__getitem__((idx + 1) % len(self.data))
+            return None
 
-        image = Image.open(full_path).convert("RGB")
-        image = image.resize((224, 224))  # 안정성
+        try:
+            image = Image.open(full_path).convert("RGB")
+            image = image.resize((224, 224))
+        except:
+            return None
 
         inputs = self.processor(
             text=[caption],
@@ -64,6 +65,17 @@ class CafeDataset(Dataset):
         return {k: v.squeeze(0) for k, v in inputs.items()}
 
 # ---------------------------
+# 🔥 collate_fn 추가
+# ---------------------------
+def collate_fn(batch):
+    batch = [b for b in batch if b is not None]
+
+    if len(batch) == 0:
+        return None
+
+    return {k: torch.stack([d[k] for d in batch]) for k in batch[0]}
+
+# ---------------------------
 # 2. 학습 함수
 # ---------------------------
 def train_lora_clip():
@@ -74,13 +86,18 @@ def train_lora_clip():
     model, processor = get_lora_clip_model()
     model.to(device)
 
-    # 🔥 LoRA만 학습
+    # LoRA만 학습
     for name, param in model.named_parameters():
         if "lora" not in name:
             param.requires_grad = False
 
     dataset = CafeDataset(processor)
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        collate_fn=collate_fn  # 🔥 추가
+    )
 
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -94,6 +111,10 @@ def train_lora_clip():
         total_loss = 0
 
         for batch in tqdm(dataloader, desc=f"Epoch {epoch+1}"):
+
+            # 🔥 None batch 방지
+            if batch is None:
+                continue
 
             batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -121,9 +142,6 @@ def train_lora_clip():
 
         print(f"📉 Epoch {epoch+1}: {total_loss / len(dataloader):.4f}")
 
-    # ---------------------------
-    # 저장
-    # ---------------------------
     model.save_pretrained("models/lora_weights")
     print("✅ LoRA 저장 완료")
 
