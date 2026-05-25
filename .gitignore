@@ -2,6 +2,12 @@ data/raw
 test.py
 sync_meta.py
 data/metadata.json
+src/app_temp.py
+data/train
+data/valid
+data/metadata_updated.json
+rebuild.py
+split_data.py
 # FAISS DB & Metadata (로컬 생성 파일)
 *.index
 *.npy
