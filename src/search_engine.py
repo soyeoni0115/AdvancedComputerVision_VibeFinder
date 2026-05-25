@@ -63,3 +63,4 @@ class SimpleFaissDB:
                 results.append(self.image_paths[idx])
                 
         return results
+  
