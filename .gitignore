@@ -1,13 +1,23 @@
-data/raw
+data/raw/
 test.py
 sync_meta.py
 data/metadata.json
+
+# Image/data artifacts
+data/processed/
+data/processed/train/
+data/processed/valid/seen/
+data/processed/valid/unseen/
+data/train_aug/
+data/train_aug_2/
+
 src/app_temp.py
 data/train
 data/valid
 data/metadata_updated.json
 rebuild.py
 split_data.py
+
 # FAISS DB & Metadata (로컬 생성 파일)
 *.index
 *.npy
