@@ -5,6 +5,9 @@ import psycopg2
 import torch
 from pathlib import Path
 from model_utils import get_lora_clip_model
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 1. 경로 설정
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -33,14 +36,7 @@ model.eval()
 # Neon DB 접속 정보를 그대로 활용
 print("Neon 데이터베이스에 연결하여 이미지 매핑용 ID 리스트를 가져오는 중...")
 try:
-    conn = psycopg2.connect(
-        dbname="neondb",
-        user="neondb_owner",
-        password="npg_eHtYc0ABqF5k",
-        host="ep-misty-mud-aogsqtmk-pooler.c-2.ap-southeast-1.aws.neon.tech",
-        port="5432",
-        sslmode="require"
-    )
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
     with conn.cursor() as cur:
         # DB에 등록된 이미지 데이터의 ID와 실제 경로/파일명 정보를 가져옵니다.
         cur.execute("SELECT id, image_path FROM cafe_images ORDER BY id ASC;")
