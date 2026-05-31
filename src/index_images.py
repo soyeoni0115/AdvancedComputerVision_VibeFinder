@@ -1,5 +1,6 @@
 # 내부 사진 폴더(data/raw)의 이미지들을 전부 읽어서 FAISS DB 파일(faiss_vibe.index)로 구워주는 빌드 파일
 # 이걸 한 번 실행godi 검색이 가능
+# postgres cafe images table에 새로 생긴 캡션 추가해야 함
 import os
 import json
 from utils import CLIPEmbedding
