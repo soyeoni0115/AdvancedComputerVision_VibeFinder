@@ -6,7 +6,7 @@ from transformers import BlipProcessor, BlipForConditionalGeneration
 
 # ===== DB 연결 =====
 conn = psycopg2.connect(
-    "postgresql://neondb_owner:npg_eHtYc0ABqF5k@ep-misty-mud-aogsqtmk-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    "postgresql://neondb_owner:npg_uXq1NRSe9KPs@ep-misty-mud-aogsqtmk-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 )
 cur = conn.cursor()
 
