@@ -1,3 +1,4 @@
+# 네온에 이미지 넣는 파일
 import os
 from pathlib import Path
 
