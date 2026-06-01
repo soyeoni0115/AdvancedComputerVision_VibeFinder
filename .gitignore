@@ -1,4 +1,5 @@
 data/raw/
+data/raw_old
 test.py
 sync_meta.py
 data/metadata.json
