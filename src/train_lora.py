@@ -5,19 +5,13 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from tqdm import tqdm
 from model_utils import get_lora_clip_model
-
+from database.postgres_new import DATABASE_URL
 # ---------------------------
 # 0. 설정
 # ---------------------------
 IMAGE_DIR = "cafe_images"
 
-DB_CONFIG = {
-    "host": "ep-misty-mud-aogsqtmk-pooler.c-2.ap-southeast-1.aws.neon.tech",
-    "database": "neondb",
-    "user": "neondb_owner",
-    "password": "npg_eHtYc0ABqF5k",
-    "sslmode": "require"
-}
+DB_CONFIG = DATABASE_URL
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
