@@ -51,6 +51,8 @@ def load_image_paths():
 
 @st.cache_resource
 def get_db_connection():
+    if isinstance(DB_CONFIG, str):
+        return psycopg2.connect(DB_CONFIG)
     return psycopg2.connect(**DB_CONFIG)
 
 
@@ -135,6 +137,42 @@ def fetch_cafe_by_image_path(image_path):
     return normalize_result(rows[0]) if rows else None
 
 
+def fetch_cafes_by_image_paths(image_paths):
+    if not image_paths:
+        return {}
+
+    path_pairs = [(str(path), Path(str(path)).name) for path in image_paths]
+    rows = run_query(
+        """
+        WITH requested(full_path, file_name, ord) AS (
+            SELECT *
+            FROM unnest(%s::text[], %s::text[]) WITH ORDINALITY
+        ),
+        matched AS (
+            SELECT DISTINCT ON (r.ord)
+                r.full_path,
+                c.id,
+                c.cafe_name,
+                c.location,
+                c.map_url,
+                ci.image_path,
+                ci.caption
+            FROM requested r
+            JOIN cafe_images ci
+              ON ci.image_path = r.full_path
+              OR ci.image_path LIKE '%%' || r.file_name
+            JOIN cafes c ON ci.cafe_id = c.id
+            ORDER BY r.ord, ci.id
+        )
+        SELECT full_path, id, cafe_name, location, map_url, image_path, caption
+        FROM matched
+        """,
+        ([pair[0] for pair in path_pairs], [pair[1] for pair in path_pairs]),
+    )
+
+    return {row[0]: normalize_result(row[1:]) for row in rows}
+
+
 def build_local_result(vector_id, image_paths):
     if vector_id < 0 or vector_id >= len(image_paths):
         return None
@@ -151,7 +189,7 @@ def build_local_result(vector_id, image_paths):
     }
 
 
-def search_by_text(model, processor, index, image_paths, query, top_k=5):
+def search_by_text(model, processor, index, image_paths, query, top_k=50):
     if not query.strip():
         return []
 
@@ -159,27 +197,34 @@ def search_by_text(model, processor, index, image_paths, query, top_k=5):
     limit = min(top_k, max(index.ntotal, 1))
     distances, indices = index.search(query_embedding, k=limit)
 
-    results = []
+    candidates = []
     for vector_id, score in zip(indices[0], distances[0]):
         vector_id = int(vector_id)
         if vector_id == -1:
             continue
 
         image_path = image_paths[vector_id] if vector_id < len(image_paths) else ""
-        try:
-            result = fetch_cafe_by_image_path(image_path) if image_path else None
-        except Exception:
-            result = None
+        candidates.append((vector_id, image_path, float(score)))
 
+    try:
+        db_results = fetch_cafes_by_image_paths(
+            [image_path for _, image_path, _ in candidates if image_path]
+        )
+    except Exception:
+        db_results = {}
+
+    results = []
+    for vector_id, image_path, score in candidates:
+        result = db_results.get(str(image_path))
         result = result or build_local_result(vector_id, image_paths)
         if result:
-            result["score"] = float(score)
+            result["score"] = score
             results.append(result)
 
     return results
 
 
-def search_by_tags(selected_tags, top_k=10):
+def search_by_tags(selected_tags, top_k=60):
     if not selected_tags:
         return []
 
@@ -355,16 +400,7 @@ def render_result(cafe):
 
 init_session_state()
 render_styles()
-
-try:
-    model, processor = load_model()
-    index = load_index()
-    image_paths = load_image_paths()
-except Exception as exc:
-    st.error(f"앱을 시작하는 중 오류가 발생했습니다: {exc}")
-    st.stop()
-
-available_tags = load_available_tags()
+available_tags = []
 
 left, right = st.columns([1, 2])
 
@@ -390,6 +426,7 @@ with right:
     )
 
     if st.button("분위기 추천 키워드로 골라보기"):
+        available_tags = load_available_tags()
         st.session_state.recommended_tags = available_tags
         if not available_tags:
             st.warning("PostgreSQL tags 테이블에 표시할 태그가 아직 없습니다.")
@@ -433,6 +470,9 @@ with right:
             st.session_state.search_results = []
         else:
             try:
+                model, processor = load_model()
+                index = load_index()
+                image_paths = load_image_paths()
                 tag_results = search_by_tags(st.session_state.selected_tags)
                 text_results = search_by_text(model, processor, index, image_paths, query)
                 st.session_state.search_results = merge_results(tag_results, text_results)
@@ -441,8 +481,18 @@ with right:
                 st.session_state.search_results = []
 
     if st.session_state.search_results:
+    # 🔹 추가: 슬라이더 (추천 카페 위)
+        num_results = st.slider(
+            "보고 싶은 카페 개수",
+            1,
+            len(st.session_state.search_results),
+            min(20, len(st.session_state.search_results))
+        )
+
         st.write("### 추천 카페")
-        for cafe in st.session_state.search_results:
+
+        # 🔹 수정: 출력 개수 제한
+        for cafe in st.session_state.search_results[:num_results]:
             render_result(cafe)
     elif st.session_state.search_clicked:
         st.info("조건에 맞는 카페를 찾지 못했습니다.")
