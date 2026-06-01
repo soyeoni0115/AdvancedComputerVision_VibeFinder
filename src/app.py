@@ -5,7 +5,7 @@ import numpy as np
 import psycopg2
 import streamlit as st
 import torch
-
+from database.postgres_new import DATABASE_URL
 from model_utils import get_lora_clip_model
 
 
@@ -19,15 +19,7 @@ LORA_PATH = BASE_DIR / "models" / "lora_weights"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-DB_CONFIG = {
-    "dbname": "neondb",
-    "user": "neondb_owner",
-    "password": "npg_eHtYc0ABqF5k",
-    "host": "ep-misty-mud-aogsqtmk-pooler.c-2.ap-southeast-1.aws.neon.tech",
-    "port": "5432",
-    "sslmode": "require",
-    "connect_timeout": 5,
-}
+DB_CONFIG = DATABASE_URL
 
 
 @st.cache_resource(show_spinner="CLIP 모델을 불러오는 중입니다...")
