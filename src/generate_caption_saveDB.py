@@ -32,7 +32,7 @@ def smart_caption(blip_caption):
 
     elif "table" in caption or "desk" in caption:
         mood_en = "good for studying, quiet place"
-        mood_kr = "공부하기 좋은 조용한 공간"
+        mood_kr = "공부하기 좋은 공간"
 
     elif "cake" in caption or "dessert" in caption:
         mood_en = "dessert cafe, nice atmosphere"
