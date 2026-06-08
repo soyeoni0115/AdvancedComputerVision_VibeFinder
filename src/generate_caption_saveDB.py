@@ -2,12 +2,12 @@ import os
 import psycopg2
 from PIL import Image
 from tqdm import tqdm
+from database.postgres_new import DATABASE_URL
 from transformers import BlipProcessor, BlipForConditionalGeneration
 
 # ===== DB 연결 =====
 conn = psycopg2.connect(
-    "postgresql://neondb_owner:npg_uXq1NRSe9KPs@ep-misty-mud-aogsqtmk-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-)
+DATABASE_URL)
 cur = conn.cursor()
 
 # ===== BLIP 모델 로드 =====

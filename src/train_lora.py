@@ -9,8 +9,8 @@ from database.postgres_new import DATABASE_URL
 # ---------------------------
 # 0. 설정
 # ---------------------------
-IMAGE_DIR = "cafe_images"
-
+#IMAGE_DIR = "cafe_images"
+IMAGE_DIR = "cafe_final_images"
 DB_CONFIG = DATABASE_URL
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,7 +25,7 @@ class CafeDataset(Dataset):
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()
 
-        cur.execute("SELECT image_path, caption FROM cafe_images")
+        cur.execute("SELECT image_path, caption FROM cafe_final_images")
         self.data = cur.fetchall()
 
         cur.close()
