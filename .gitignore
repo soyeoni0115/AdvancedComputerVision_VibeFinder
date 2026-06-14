@@ -19,6 +19,15 @@ data/metadata_updated.json
 rebuild.py
 split_data.py
 
+models/lora_weights
+models/lora_weights2
+models/lora_weights3
+models/lora_weights4
+models/lora_weights5
+
+lora_continue_log.csv
+lora_continue2_log.csv
+lora_training_log.csv
 # FAISS DB & Metadata (로컬 생성 파일)
 *.index
 *.npy
