@@ -8,6 +8,7 @@ import torch
 from database.postgres_final import DATABASE_URL
 from model_utils import get_lora_clip_model
 
+from PIL import Image
 
 st.set_page_config(page_title="Vibe Finder", layout="wide")
 
@@ -15,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_IMAGE_DIR = BASE_DIR / "data" / "raw"
 INDEX_PATH = BASE_DIR / "faiss_vibe.index"
 PATHS_PATH = BASE_DIR / "paths.npy"
-LORA_PATH = BASE_DIR / "models" / "lora_weights"
+LORA_PATH = BASE_DIR / "models" / "lora_weights5"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -27,7 +28,7 @@ def load_model():
     model, processor = get_lora_clip_model()
 
     if LORA_PATH.exists():
-        model.load_adapter(str(LORA_PATH), adapter_name="default")
+        model.load_adapter(str(LORA_PATH), adapter_name="lora_adapter")
         model.set_adapter("default")
 
     model.to(DEVICE)
@@ -79,6 +80,24 @@ def load_available_tags():
 
     return [row[0] for row in rows]
 
+
+def crop_to_16_9(image):
+    width, height = image.size
+    target_ratio = 16 / 9
+    current_ratio = width / height
+
+    if current_ratio > target_ratio:
+        # 가로가 더 김 → 좌우 자르기
+        new_width = int(height * target_ratio)
+        left = (width - new_width) // 2
+        right = left + new_width
+        return image.crop((left, 0, right, height))
+    else:
+        # 세로가 더 김 → 위아래 자르기
+        new_height = int(width / target_ratio)
+        top = (height - new_height) // 2
+        bottom = top + new_height
+        return image.crop((0, top, width, bottom))
 
 def encode_text(model, processor, text):
     inputs = processor(text=[text], return_tensors="pt", padding=True)
@@ -381,7 +400,9 @@ def render_result(cafe):
 
     with col_img:
         if cafe["image_path"] and image_file.exists():
-            st.image(str(image_file), use_container_width=True)
+            img = Image.open(image_file)
+            img = crop_to_16_9(img)
+            st.image(img, use_container_width=True)
         elif cafe["image_path"]:
             st.warning(f"이미지를 찾을 수 없습니다: {cafe['image_path']}")
         else:
