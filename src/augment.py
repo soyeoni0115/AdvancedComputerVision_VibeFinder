@@ -4,7 +4,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 INPUT_DIR = "../data/processed/train"
-OUTPUT_DIR = "../data/train_aug2"
+OUTPUT_DIR = "../data/train_aug"
 AUG_PER_IMAGE = 3
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
