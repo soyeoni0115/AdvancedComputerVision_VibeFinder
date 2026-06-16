@@ -6,9 +6,12 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-
-from database.postgres_new import DATABASE_URL
 from model_utils import get_lora_clip_model
+from database.postgres_final import DATABASE_URL
+# ---------------------------
+# 0. 설정
+# ---------------------------
+IMAGE_DIR = "cafe_images"
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
