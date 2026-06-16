@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from tqdm import tqdm
 from model_utils import get_lora_clip_model
-from database.postgres_new import DATABASE_URL
+from database.postgres_final import DATABASE_URL
 # ---------------------------
 # 0. 설정
 # ---------------------------
