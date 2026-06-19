@@ -1,5 +1,7 @@
 from pathlib import Path
+from dotenv import load_dotenv
 
+load_dotenv()
 import faiss
 import numpy as np
 import psycopg2
@@ -7,7 +9,7 @@ import streamlit as st
 import torch
 from database.postgres_final import DATABASE_URL
 from model_utils import get_lora_clip_model
-
+from query_expander import expand_query
 from PIL import Image
 
 st.set_page_config(page_title="Vibe Finder", layout="wide")
@@ -16,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_IMAGE_DIR = BASE_DIR / "data" / "raw"
 INDEX_PATH = BASE_DIR / "faiss_vibe.index"
 PATHS_PATH = BASE_DIR / "paths.npy"
-LORA_PATH = BASE_DIR / "models" / "lora_weights5"
+LORA_PATH = BASE_DIR / "models" / "lora_weights3"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -28,7 +30,7 @@ def load_model():
     model, processor = get_lora_clip_model()
 
     if LORA_PATH.exists():
-        model.load_adapter(str(LORA_PATH), adapter_name="lora_adapter")
+        model.load_adapter(str(LORA_PATH), adapter_name="default")
         model.set_adapter("default")
 
     model.to(DEVICE)
@@ -49,38 +51,6 @@ def load_image_paths():
         return []
     return [str(path) for path in np.load(PATHS_PATH, allow_pickle=True).tolist()]
 
-
-@st.cache_resource
-def get_db_connection():
-    if isinstance(DB_CONFIG, str):
-        return psycopg2.connect(DB_CONFIG)
-    return psycopg2.connect(**DB_CONFIG)
-
-
-def run_query(query, params=()):
-    conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute(query, params)
-        return cur.fetchall()
-
-
-@st.cache_data(ttl=300)
-def load_available_tags():
-    try:
-        rows = run_query(
-            """
-            SELECT DISTINCT tag_name
-            FROM tags
-            WHERE tag_name IS NOT NULL AND btrim(tag_name) <> ''
-            ORDER BY tag_name
-            """
-        )
-    except Exception:
-        return []
-
-    return [row[0] for row in rows]
-
-
 def crop_to_16_9(image):
     width, height = image.size
     target_ratio = 16 / 9
@@ -98,6 +68,33 @@ def crop_to_16_9(image):
         top = (height - new_height) // 2
         bottom = top + new_height
         return image.crop((0, top, width, bottom))
+
+def run_query(query, params=()):
+    if isinstance(DB_CONFIG, str):
+        conn = psycopg2.connect(DB_CONFIG)
+    else:
+        conn = psycopg2.connect(**DB_CONFIG)
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def load_available_tags():
+    try:
+        rows = run_query(
+            """
+            SELECT DISTINCT tag_name
+            FROM tags
+            WHERE tag_name IS NOT NULL AND btrim(tag_name) <> ''
+            ORDER BY tag_name
+            """
+        )
+    except Exception:
+        return []
+
+    return [row[0] for row in rows]
+
 
 def encode_text(model, processor, text):
     inputs = processor(text=[text], return_tensors="pt", padding=True)
@@ -144,10 +141,10 @@ def fetch_cafe_by_image_path(image_path):
     rows = run_query(
         """
         SELECT c.id, c.cafe_name, c.location, c.map_url, ci.image_path, ci.caption
-        FROM cafe_images ci
-        JOIN cafes c ON ci.cafe_id = c.id
+        FROM cafe_final_images ci
+        JOIN cafes_final c ON ci.cafe_id = c.id
         WHERE ci.image_path = %s
-           OR ci.image_path LIKE %s
+        OR ci.image_path LIKE %s
         ORDER BY ci.id
         LIMIT 1
         """,
@@ -177,10 +174,11 @@ def fetch_cafes_by_image_paths(image_paths):
                 ci.image_path,
                 ci.caption
             FROM requested r
-            JOIN cafe_images ci
-              ON ci.image_path = r.full_path
-              OR ci.image_path LIKE '%%' || r.file_name
-            JOIN cafes c ON ci.cafe_id = c.id
+            JOIN cafe_final_images ci
+            ON ci.image_path = r.full_path
+            OR ci.image_path LIKE '%%' || r.file_name
+            JOIN cafes_final c
+            ON ci.cafe_id = c.id
             ORDER BY r.ord, ci.id
         )
         SELECT full_path, id, cafe_name, location, map_url, image_path, caption
@@ -229,7 +227,8 @@ def search_by_text(model, processor, index, image_paths, query, top_k=50):
         db_results = fetch_cafes_by_image_paths(
             [image_path for _, image_path, _ in candidates if image_path]
         )
-    except Exception:
+    except Exception as e:
+        st.error(f"DB 조회 실패: {e}")  # ← 기존엔 이게 없어서 원인 몰랐음
         db_results = {}
 
     results = []
@@ -257,7 +256,7 @@ def search_by_tags(selected_tags, top_k=60):
                 c.map_url,
                 array_agg(DISTINCT t.tag_name ORDER BY t.tag_name) AS matched_tags,
                 count(DISTINCT t.tag_name) AS match_count
-            FROM cafes c
+            FROM cafes_final c
             JOIN tags t ON t.cafe_id = c.id
             WHERE t.tag_name = ANY(%s)
             GROUP BY c.id, c.cafe_name, c.location, c.map_url
@@ -267,7 +266,7 @@ def search_by_tags(selected_tags, top_k=60):
                 ci.cafe_id,
                 ci.image_path,
                 ci.caption
-            FROM cafe_images ci
+            FROM cafe_final_images ci
             ORDER BY ci.cafe_id, ci.id
         )
         SELECT
@@ -402,13 +401,14 @@ def render_result(cafe):
         if cafe["image_path"] and image_file.exists():
             img = Image.open(image_file)
             img = crop_to_16_9(img)
-            st.image(img, use_container_width=True)
+            st.image(img, use_container_width=True)  # ← 이 줄 추가
         elif cafe["image_path"]:
             st.warning(f"이미지를 찾을 수 없습니다: {cafe['image_path']}")
         else:
             st.info("등록된 이미지가 없습니다.")
 
     with col_info:
+        # st.write(cafe) 디버깅용
         st.subheader(cafe["cafe_name"])
         st.write(f"주소: {cafe['location']}")
         if cafe["map_url"]:
@@ -485,6 +485,7 @@ with right:
     if search_clicked:
         st.session_state.search_clicked = True
         query = " ".join([vibe.strip(), *st.session_state.selected_tags]).strip()
+        query = expand_query(query)  # 이 줄 추가
 
         if not query:
             st.warning("검색어를 입력하거나 태그를 선택해 주세요.")
