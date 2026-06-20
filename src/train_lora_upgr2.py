@@ -63,14 +63,14 @@ def train_lora_continue():
         collate_fn=collate_fn,
     )
 
-    # ✅ optimizer 개선
+    # optimizer 개선
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=LR,
         weight_decay=0.01,   # ⭐ 핵심 추가
     )
 
-    # ✅ scheduler 추가
+    # scheduler 추가
     scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
     best_valid_loss = float("inf")
@@ -111,7 +111,7 @@ def train_lora_continue():
             loss = get_clip_loss(model, batch)
             loss.backward()
 
-            # ✅ gradient clipping (안정성)
+            # gradient clipping (안정성)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
             optimizer.step()
@@ -119,7 +119,7 @@ def train_lora_continue():
             total_loss += loss.item()
             batch_count += 1
 
-        scheduler.step()  # ⭐ LR 점점 줄어듦
+        scheduler.step()  
 
         train_loss = total_loss / batch_count if batch_count > 0 else None
         print(f"Epoch {epoch + 1} train loss: {train_loss:.4f}")
@@ -141,7 +141,7 @@ def train_lora_continue():
             f"text acc: {valid_unseen_result['text_acc']:.4f}"
         )
 
-        # ✅ early stopping 기준 유지
+        # early stopping 기준 유지
         if valid_unseen_result["loss"] < best_valid_loss:
             is_best = True
             best_valid_loss = valid_unseen_result["loss"]

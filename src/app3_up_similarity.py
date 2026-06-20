@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_IMAGE_DIR = BASE_DIR / "data" / "raw"
 INDEX_PATH = BASE_DIR / "faiss_vibe.index"
 PATHS_PATH = BASE_DIR / "paths.npy"
-LORA_PATH = BASE_DIR / "models" / "lora_weights3"
+LORA_PATH = BASE_DIR / "models" / "lora_weights2"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -190,6 +190,7 @@ def build_local_result(vector_id, image_paths):
         "caption": "",
     }
 
+
 def score_to_percent(score, index):
     metric_type = getattr(index, "metric_type", None)
 
@@ -225,7 +226,7 @@ def search_by_text(model, processor, index, image_paths, query, top_k=50):
             [image_path for _, image_path, _ in candidates if image_path]
         )
     except Exception as e:
-        st.error(f"DB 조회 실패: {e}")
+        st.error(f"DB 조회 실패: {e}")  # ← 기존엔 이게 없어서 원인 몰랐음
         db_results = {}
 
     results = []
@@ -237,18 +238,22 @@ def search_by_text(model, processor, index, image_paths, query, top_k=50):
             result["score_percent"] = score_to_percent(score, index)
             results.append(result)
 
-    # 카페 단위로 중복 제거 (유사도가 가장 높은 이미지 1장만 대표로 남김)
-    best_by_cafe = {}
-    for result in results:
-        key = result.get("cafe_id") or result.get("cafe_name")
-        if key is None:
-            continue
-        existing = best_by_cafe.get(key)
-        if existing is None or result["score"] > existing["score"]:  # FAISS IndexFlatIP는 score 클수록 유사
-            best_by_cafe[key] = result
+    return results
 
-    deduped = sorted(best_by_cafe.values(), key=lambda r: r["score"], reverse=True)
-    return deduped
+
+def merge_results(*result_groups):
+    merged = []
+    seen = set()
+
+    for group in result_groups:
+        for result in group:
+            key = result.get("cafe_id") or result.get("image_path") or result.get("cafe_name")
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(result)
+
+    return merged
 
 
 
@@ -361,7 +366,7 @@ def render_result(cafe):
         if "score_percent" in cafe:
             st.caption(f"검색어와의 유사도: {cafe['score_percent']}%")
 
-# 페이지 상태
+# ✅ 페이지 상태
 if "page" not in st.session_state:
     st.session_state.page = "main"
 
@@ -370,14 +375,14 @@ render_styles()
 
 
 
-# 상단 버튼 (오른쪽)
+# ✅ 상단 버튼 (오른쪽)
 top_left, top_right = st.columns([9, 1])
 with top_right:
     if st.button("📄 모델 설명"):
         st.session_state.page = "about"
 
 # =========================
-# 메인 페이지
+# ✅ 메인 페이지
 # =========================
 if st.session_state.page == "main":
 
@@ -404,7 +409,7 @@ if st.session_state.page == "main":
             label_visibility="collapsed",
         )
 
-        # 안내 토글
+        # ✅ 안내 토글
         if "show_guide" not in st.session_state:
             st.session_state.show_guide = False
 
@@ -428,7 +433,6 @@ if st.session_state.page == "main":
         if search_clicked:
             st.session_state.search_clicked = True
             query = vibe.strip()
-            query = expand_query(query)  # 이 줄 추가해야 llm이 검색어 확장 가능
 
             if not query:
                 st.warning("검색어를 입력해주세요.")
@@ -470,7 +474,7 @@ if st.session_state.page == "main":
 
 
 # =========================
-# 모델 설명 페이지
+# ✅ 모델 설명 페이지
 # =========================
 elif st.session_state.page == "about":
 
@@ -479,7 +483,7 @@ elif st.session_state.page == "about":
     col_left, col_right = st.columns([1, 1])
 
     # =========================
-    # 왼쪽: 기술 설명
+    # ✅ 왼쪽: 기술 설명
     # =========================
     with col_left:
         st.write("""
@@ -508,7 +512,7 @@ elif st.session_state.page == "about":
         """)
 
     # =========================
-    # 오른쪽: 모델 선택 + 표
+    # ✅ 오른쪽: 모델 선택 + 표
     # =========================
     with col_right:
         st.write("""

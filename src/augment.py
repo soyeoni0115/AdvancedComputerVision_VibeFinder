@@ -44,4 +44,4 @@ for cafe in os.listdir(INPUT_DIR):
             aug_img = augment(img)
             aug_img.save(os.path.join(dst_path, f"{base}_aug{i}.jpg"))
 
-print("✅ 증강 완료")
+print("증강 완료")
