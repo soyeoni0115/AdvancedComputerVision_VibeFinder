@@ -1,4 +1,4 @@
-# 셀레니움으로 네이버 플레이스 - 사진 - 내부 탭에서 내부 사진만 가져오는 코드
+# 기존 데모 사진 중 10장보다 부족한 카페만을 찾아 부족한 장수만큼 수집하는 코드
 import os
 import time
 import urllib.request
@@ -13,22 +13,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-
-# ==========================================
 # 설정
-# ==========================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
 
-SAVE_DIR = BASE_DIR / "data" / "final_raw"
+SAVE_DIR = BASE_DIR / "data" / "raw_renamed"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
-
-# ==========================================
-# DB
-# ==========================================
+# DB 연결하기
 
 def get_db_connection():
 
@@ -49,7 +43,7 @@ def get_target_cafes():
             cafe_name,
             map_url
         FROM cafes_final
-        WHERE id = 57
+        WHERE id = 37
         ORDER BY id
     """)
 
@@ -60,10 +54,7 @@ def get_target_cafes():
 
     return cafes
 
-
-# ==========================================
-# 크롤링
-# ==========================================
+# 부족한 장 수 만큼 크롤링
 
 def crawl_and_save(
     driver,
@@ -81,6 +72,28 @@ def crawl_and_save(
         print("URL  :", map_url)
         print("================================")
 
+        # 현재 보유 장수 확인
+
+        existing_files = list(
+            SAVE_DIR.glob(f"{cafe_id}_*")
+        )
+
+        existing_count = len(existing_files)
+
+        print(f"현재 보유: {existing_count}장")
+
+        if existing_count >= 10:
+
+            print("이미 10장 이상 보유 - 스킵")
+
+            return "SUCCESS"
+
+        need_count = 10 - existing_count
+
+        print(f"추가 필요: {need_count}장")
+
+        # 페이지 이동
+
         print("이동 시작")
 
         driver.get(map_url)
@@ -90,14 +103,12 @@ def crawl_and_save(
         print("현재 제목:", driver.title)
 
         time.sleep(5)
-
-        # ==================================
-        # 검색결과 페이지 처리
-        # ==================================
+        
+        # 검색결과 페이지
 
         if "검색 - 네이버지도" in driver.title:
 
-            print("검색결과 페이지")
+            print("🔍 검색결과 페이지")
 
             WebDriverWait(driver, 10).until(
                 EC.frame_to_be_available_and_switch_to_it(
@@ -147,9 +158,7 @@ def crawl_and_save(
 
             driver.switch_to.default_content()
 
-        # ==================================
         # entryIframe
-        # ==================================
 
         WebDriverWait(driver, 15).until(
             EC.frame_to_be_available_and_switch_to_it(
@@ -159,9 +168,7 @@ def crawl_and_save(
 
         print("entryIframe 진입")
 
-        # ==================================
         # 사진 탭
-        # ==================================
 
         photo_tab = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable(
@@ -177,13 +184,11 @@ def crawl_and_save(
             photo_tab
         )
 
-        print("사진 탭 클릭 성공")
+        print("📸 사진 탭 클릭 성공")
 
         time.sleep(3)
-
-        # ==================================
+        
         # 내부 탭
-        # ==================================
 
         interior_elements = driver.find_elements(
             By.XPATH,
@@ -209,9 +214,9 @@ def crawl_and_save(
 
         time.sleep(5)
 
-        # ==================================
+        
         # 이미지 수집
-        # ==================================
+       
 
         imgs = driver.find_elements(
             By.CSS_SELECTOR,
@@ -230,10 +235,6 @@ def crawl_and_save(
 
                 image_urls.append(src)
 
-            if len(image_urls) >= 10:
-
-                break
-
         if len(image_urls) == 0:
 
             print("내부 이미지 없음")
@@ -242,22 +243,40 @@ def crawl_and_save(
 
             return "NO_INTERIOR"
 
-        # ==================================
+        
         # 저장
-        # ==================================
+        
 
-        for idx, url in enumerate(image_urls, start=1):
+        saved = 0
 
-            filename = f"{cafe_id}_{idx}.jpg"
+        for url in image_urls:
+
+            if saved >= need_count:
+                break
+
+            filename = f"{cafe_id}_{existing_count + saved + 1}.jpg"
 
             save_path = SAVE_DIR / filename
 
-            urllib.request.urlretrieve(
-                url,
-                str(save_path)
-            )
+            if save_path.exists():
+                continue
 
-            print(f"저장 완료: {filename}")
+            try:
+
+                urllib.request.urlretrieve(
+                    url,
+                    str(save_path)
+                )
+
+                saved += 1
+
+                print(f"저장 완료: {filename}")
+
+            except Exception as e:
+
+                print("저장 실패:", e)
+
+        print(f"최종 추가: {saved}장")
 
         driver.switch_to.default_content()
 
@@ -277,15 +296,15 @@ def crawl_and_save(
         return "ERROR"
 
 
-# ==========================================
+
 # 메인
-# ==========================================
+
 
 if __name__ == "__main__":
 
     cafes = get_target_cafes()
 
-    print(f"🔥 총 {len(cafes)}개 카페 시작")
+    print(f" 총 {len(cafes)}개 카페 시작")
 
     options = uc.ChromeOptions()
     options.add_argument("--window-size=1920,1080")
@@ -294,7 +313,7 @@ if __name__ == "__main__":
         options=options
     )
 
-    print("✅ 크롬 생성 완료")
+    print(" 크롬 생성 완료")
 
     success = 0
     no_interior = 0

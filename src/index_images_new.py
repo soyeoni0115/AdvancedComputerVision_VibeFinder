@@ -8,9 +8,8 @@ from PIL import Image
 from model_utils import get_lora_clip_model
 from dotenv import load_dotenv
 
-# =========================
+
 # 경로 설정
-# =========================
 
 SRC_DIR = Path(__file__).resolve().parent
 BASE_DIR = SRC_DIR.parent
@@ -20,7 +19,7 @@ DATA_DIR = BASE_DIR / "data"
 INDEX_PATH = BASE_DIR / "faiss_vibe.index"
 PATHS_PATH = BASE_DIR / "paths.npy"
 
-LORA_PATH = BASE_DIR / "models" / "lora_weights3"
+LORA_PATH = BASE_DIR / "models" / "lora_weights2" # 3에서 2로 변경
 
 ENV_PATH = BASE_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
@@ -28,7 +27,7 @@ load_dotenv(dotenv_path=ENV_PATH)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 IMAGE_DIRS = [
-    DATA_DIR / "all_raw"
+    DATA_DIR / "raw"
 ]
 
 print("=" * 50)
@@ -39,9 +38,7 @@ print("LoRA Path =", LORA_PATH)
 print("LoRA Exists =", LORA_PATH.exists())
 print("=" * 50)
 
-# =========================
 # 모델 로드
-# =========================
 
 print("파인튜닝된 CLIP 모델 및 LoRA 가중치 로드 중...")
 
@@ -50,16 +47,14 @@ model, processor = get_lora_clip_model()
 if LORA_PATH.exists():
     model.load_adapter(str(LORA_PATH), adapter_name="default")
     model.set_adapter("default")
-    print("✅ LoRA 로드 완료")
+    print("LoRA 로드 완료")
 else:
-    print("⚠️ LoRA 폴더를 찾지 못했습니다.")
+    print("LoRA 폴더를 찾지 못했습니다.")
 
 model.to(DEVICE)
 model.eval()
 
-# =========================
 # DB 연결
-# =========================
 
 print("Neon 데이터베이스 연결 중...")
 
@@ -90,17 +85,15 @@ try:
 
 except Exception as e:
 
-    print(f"🚨 DB 연결 실패: {e}")
+    print(f"DB 연결 실패: {e}")
     exit()
 
-print(f"📊 DB에서 {len(db_rows)}개 이미지 조회 완료")
+print(f"DB에서 {len(db_rows)}개 이미지 조회 완료")
 
 for row in db_rows[:5]:
     print(row)
 
-# =========================
 # 파일 찾기
-# =========================
 
 def find_local_file(db_img_path):
 
@@ -124,10 +117,7 @@ def find_local_file(db_img_path):
 
     return None
 
-
-# =========================
 # 임베딩 생성
-# =========================
 
 ordered_paths = []
 embeddings = []
@@ -135,7 +125,7 @@ embeddings = []
 success_count = 0
 missing_count = 0
 
-print("📸 이미지 임베딩 생성 시작...")
+print("이미지 임베딩 생성 시작...")
 
 for vector_id, db_img_path in db_rows:
 
@@ -143,7 +133,7 @@ for vector_id, db_img_path in db_rows:
 
     if local_file_path is None:
 
-        print(f"⚠️ 파일 없음: {db_img_path}")
+        print(f"파일 없음: {db_img_path}")
 
         embeddings.append(
             np.zeros(512, dtype=np.float32)
@@ -241,7 +231,7 @@ for vector_id, db_img_path in db_rows:
     except Exception as e:
 
         print(
-            f"❌ 임베딩 실패 "
+            f"임베딩 실패 "
             f"(ID={vector_id}, 파일={local_file_path})"
         )
 
@@ -258,11 +248,9 @@ print(f"성공: {success_count}")
 print(f"파일없음: {missing_count}")
 print("=" * 50)
 
-# =========================
 # FAISS 생성
-# =========================
 
-print("⚖️ FAISS IndexFlatIP 생성 중...")
+print("FAISS IndexFlatIP 생성 중...")
 
 embeddings_array = np.array(
     embeddings,
@@ -283,9 +271,7 @@ index.add(
     embeddings_array
 )
 
-# =========================
 # 저장
-# =========================
 
 if INDEX_PATH.exists():
     os.remove(INDEX_PATH)
@@ -306,7 +292,7 @@ np.save(
     )
 )
 
-print("🎉 완료")
+print("완료")
 print(f"총 {len(ordered_paths)}개 저장")
 print("FAISS:", INDEX_PATH)
 print("PATHS:", PATHS_PATH)

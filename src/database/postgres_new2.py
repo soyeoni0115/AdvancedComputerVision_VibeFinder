@@ -1,3 +1,4 @@
+# db의 cafe_final_images 테이블을 처음 생성하고, raw폴더의 이미지들을 업로드하는 이전 코드
 import os
 from dotenv import load_dotenv
 
