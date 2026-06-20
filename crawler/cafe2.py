@@ -1,3 +1,4 @@
+# 카페 이름, 주소, 길찾기를 네이버 검색 api를 통해 가져오는 개선된 코드
 import os
 import sys
 from urllib.parse import quote
