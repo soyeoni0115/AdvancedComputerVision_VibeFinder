@@ -4,13 +4,14 @@ from dotenv import load_dotenv
 load_dotenv()
 import faiss
 import numpy as np
+import pandas as pd
 import psycopg2
 import streamlit as st
 import torch
 from database.postgres_final import DATABASE_URL
 from model_utils import get_lora_clip_model
 from query_expander import expand_query
-
+from PIL import Image
 
 st.set_page_config(page_title="Vibe Finder", layout="wide")
 
@@ -18,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_IMAGE_DIR = BASE_DIR / "data" / "raw"
 INDEX_PATH = BASE_DIR / "faiss_vibe.index"
 PATHS_PATH = BASE_DIR / "paths.npy"
-LORA_PATH = BASE_DIR / "models" / "lora_weights3"
+LORA_PATH = BASE_DIR / "models" / "lora_weights2"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -51,6 +52,23 @@ def load_image_paths():
         return []
     return [str(path) for path in np.load(PATHS_PATH, allow_pickle=True).tolist()]
 
+def crop_to_16_9(image):
+    width, height = image.size
+    target_ratio = 16 / 9
+    current_ratio = width / height
+
+    if current_ratio > target_ratio:
+        # 가로가 더 김 → 좌우 자르기
+        new_width = int(height * target_ratio)
+        left = (width - new_width) // 2
+        right = left + new_width
+        return image.crop((left, 0, right, height))
+    else:
+        # 세로가 더 김 → 위아래 자르기
+        new_height = int(width / target_ratio)
+        top = (height - new_height) // 2
+        bottom = top + new_height
+        return image.crop((0, top, width, bottom))
 
 def run_query(query, params=()):
     if isinstance(DB_CONFIG, str):
@@ -62,21 +80,7 @@ def run_query(query, params=()):
             cur.execute(query, params)
             return cur.fetchall()
 
-@st.cache_data(ttl=300)
-def load_available_tags():
-    try:
-        rows = run_query(
-            """
-            SELECT DISTINCT tag_name
-            FROM tags
-            WHERE tag_name IS NOT NULL AND btrim(tag_name) <> ''
-            ORDER BY tag_name
-            """
-        )
-    except Exception:
-        return []
 
-    return [row[0] for row in rows]
 
 
 def encode_text(model, processor, text):
@@ -107,7 +111,7 @@ def resolve_image_path(image_path):
     return RAW_IMAGE_DIR / path.name
 
 
-def normalize_result(row, matched_tags=None):
+def normalize_result(row):
     return {
         "cafe_id": row[0],
         "cafe_name": row[1],
@@ -115,7 +119,6 @@ def normalize_result(row, matched_tags=None):
         "map_url": row[3] or "",
         "image_path": row[4] or "",
         "caption": row[5] or "",
-        "matched_tags": matched_tags or [],
     }
 
 
@@ -185,8 +188,20 @@ def build_local_result(vector_id, image_paths):
         "map_url": "",
         "image_path": image_path,
         "caption": "",
-        "matched_tags": [],
     }
+
+
+def score_to_percent(score, index):
+    metric_type = getattr(index, "metric_type", None)
+
+    if metric_type == faiss.METRIC_L2:
+        # Embeddings are normalized, so squared L2 distance is usually 0..4.
+        percent = (1 - min(max(score, 0.0), 4.0) / 4) * 100
+    else:
+        # Inner product on normalized embeddings is cosine similarity, -1..1.
+        percent = ((min(max(score, -1.0), 1.0) + 1) / 2) * 100
+
+    return round(percent, 1)
 
 
 def search_by_text(model, processor, index, image_paths, query, top_k=50):
@@ -220,59 +235,10 @@ def search_by_text(model, processor, index, image_paths, query, top_k=50):
         result = result or build_local_result(vector_id, image_paths)
         if result:
             result["score"] = score
+            result["score_percent"] = score_to_percent(score, index)
             results.append(result)
 
     return results
-
-
-def search_by_tags(selected_tags, top_k=60):
-    if not selected_tags:
-        return []
-
-    rows = run_query(
-        """
-        WITH matched AS (
-            SELECT
-                c.id AS cafe_id,
-                c.cafe_name,
-                c.location,
-                c.map_url,
-                array_agg(DISTINCT t.tag_name ORDER BY t.tag_name) AS matched_tags,
-                count(DISTINCT t.tag_name) AS match_count
-            FROM cafes_final c
-            JOIN tags t ON t.cafe_id = c.id
-            WHERE t.tag_name = ANY(%s)
-            GROUP BY c.id, c.cafe_name, c.location, c.map_url
-        ),
-        first_image AS (
-            SELECT DISTINCT ON (ci.cafe_id)
-                ci.cafe_id,
-                ci.image_path,
-                ci.caption
-            FROM cafe_final_images ci
-            ORDER BY ci.cafe_id, ci.id
-        )
-        SELECT
-            m.cafe_id,
-            m.cafe_name,
-            m.location,
-            m.map_url,
-            fi.image_path,
-            fi.caption,
-            m.matched_tags,
-            m.match_count
-        FROM matched m
-        LEFT JOIN first_image fi ON fi.cafe_id = m.cafe_id
-        ORDER BY m.match_count DESC, m.cafe_name
-        LIMIT %s
-        """,
-        (selected_tags, top_k),
-    )
-
-    return [
-        normalize_result(row[:6], matched_tags=list(row[6] or []))
-        for row in rows
-    ]
 
 
 def merge_results(*result_groups):
@@ -289,17 +255,6 @@ def merge_results(*result_groups):
 
     return merged
 
-
-def init_session_state():
-    defaults = {
-        "recommended_tags": [],
-        "selected_tags": [],
-        "search_results": [],
-        "search_clicked": False,
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
 
 
 def render_styles():
@@ -375,6 +330,16 @@ def render_styles():
         unsafe_allow_html=True,
     )
 
+def init_session_state():
+    defaults = {
+        "recommended_tags": [],
+        "selected_tags": [],
+        "search_results": [],
+        "search_clicked": False,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 def render_result(cafe):
     image_file = resolve_image_path(cafe["image_path"])
@@ -382,7 +347,9 @@ def render_result(cafe):
 
     with col_img:
         if cafe["image_path"] and image_file.exists():
-            st.image(str(image_file), use_container_width=True)
+            img = Image.open(image_file)
+            img = crop_to_16_9(img)
+            st.image(img, use_container_width=True)  # ← 이 줄 추가
         elif cafe["image_path"]:
             st.warning(f"이미지를 찾을 수 없습니다: {cafe['image_path']}")
         else:
@@ -394,110 +361,192 @@ def render_result(cafe):
         st.write(f"주소: {cafe['location']}")
         if cafe["map_url"]:
             st.write(f"[지도 보기]({cafe['map_url']})")
-        if cafe["matched_tags"]:
-            st.write("일치한 태그: " + " ".join(f"#{tag}" for tag in cafe["matched_tags"]))
         if cafe["caption"]:
             st.caption(cafe["caption"])
+        if "score_percent" in cafe:
+            st.caption(f"검색어와의 유사도: {cafe['score_percent']}%")
 
+# ✅ 페이지 상태
+if "page" not in st.session_state:
+    st.session_state.page = "main"
 
 init_session_state()
 render_styles()
-available_tags = []
 
-left, right = st.columns([1, 2])
 
-with left:
-    st.markdown(
-        """
-        <div class="title-container">
-            <div class="title">Vibe<br>Finder</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
-with right:
-    st.markdown('<div class="center-box">', unsafe_allow_html=True)
-    st.markdown('<div class="desc">원하는 분위기를 입력하세요</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subdesc">분위기에 맞는 카페를 추천해드립니다</div>', unsafe_allow_html=True)
+# ✅ 상단 버튼 (오른쪽)
+top_left, top_right = st.columns([9, 1])
+with top_right:
+    if st.button("📄 모델 설명"):
+        st.session_state.page = "about"
 
-    vibe = st.text_input(
-        "분위기 입력",
-        placeholder="예: 조용하고 감성적인, 공부하기 좋은, 디저트가 맛있는",
-        label_visibility="collapsed",
-    )
+# =========================
+# ✅ 메인 페이지
+# =========================
+if st.session_state.page == "main":
 
-    if st.button("분위기 추천 키워드로 골라보기"):
-        available_tags = load_available_tags()
-        st.session_state.recommended_tags = available_tags
-        if not available_tags:
-            st.warning("PostgreSQL tags 테이블에 표시할 태그가 아직 없습니다.")
+    left, right = st.columns([1, 2])
 
-    if st.session_state.recommended_tags:
-        st.write("### 추천 태그")
-        cols = st.columns(5)
-
-        for idx, tag in enumerate(st.session_state.recommended_tags):
-            with cols[idx % 5]:
-                selected = tag in st.session_state.selected_tags
-                button_type = "primary" if selected else "secondary"
-
-                if st.button(
-                    f"#{tag}",
-                    key=f"tag_{tag}",
-                    type=button_type,
-                    use_container_width=True,
-                ):
-                    if selected:
-                        st.session_state.selected_tags.remove(tag)
-                    else:
-                        st.session_state.selected_tags.append(tag)
-                    st.rerun()
-
-    if st.session_state.selected_tags:
-        selected_text = " ".join(f"#{tag}" for tag in st.session_state.selected_tags)
-        st.write("### 선택한 태그")
-        st.markdown(f'<div class="selected-tags">{selected_text}</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="button-container">', unsafe_allow_html=True)
-    search_clicked = st.button("검색하기", type="primary")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if search_clicked:
-        st.session_state.search_clicked = True
-        query = " ".join([vibe.strip(), *st.session_state.selected_tags]).strip()
-        query = expand_query(query)  # 이 줄 추가
-
-        if not query:
-            st.warning("검색어를 입력하거나 태그를 선택해 주세요.")
-            st.session_state.search_results = []
-        else:
-            try:
-                model, processor = load_model()
-                index = load_index()
-                image_paths = load_image_paths()
-                tag_results = search_by_tags(st.session_state.selected_tags)
-                text_results = search_by_text(model, processor, index, image_paths, query)
-                st.session_state.search_results = merge_results(tag_results, text_results)
-            except Exception as exc:
-                st.error(f"검색 중 오류가 발생했습니다: {exc}")
-                st.session_state.search_results = []
-
-    if st.session_state.search_results:
-    # 🔹 추가: 슬라이더 (추천 카페 위)
-        num_results = st.slider(
-            "보고 싶은 카페 개수",
-            1,
-            len(st.session_state.search_results),
-            min(20, len(st.session_state.search_results))
+    with left:
+        st.markdown(
+            """
+            <div class="title-container">
+                <div class="title">Vibe<br>Finder</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-        st.write("### 추천 카페")
+    with right:
+        st.markdown('<div class="center-box">', unsafe_allow_html=True)
+        st.markdown('<div class="desc">원하는 분위기를 입력하세요</div>', unsafe_allow_html=True)
+        st.markdown('<div class="subdesc">분위기에 맞는 카페를 추천해드립니다</div>', unsafe_allow_html=True)
 
-        # 🔹 수정: 출력 개수 제한
-        for cafe in st.session_state.search_results[:num_results]:
-            render_result(cafe)
-    elif st.session_state.search_clicked:
-        st.info("조건에 맞는 카페를 찾지 못했습니다.")
+        vibe = st.text_input(
+            "분위기 입력",
+            placeholder="예: 조용하고 감성적인, 공부하기 좋은, 디저트가 맛있는",
+            label_visibility="collapsed",
+        )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        # ✅ 안내 토글
+        if "show_guide" not in st.session_state:
+            st.session_state.show_guide = False
+
+        label = "사용방법 닫기" if st.session_state.show_guide else "사용방법 안내서"
+
+        if st.button(label):
+            st.session_state.show_guide = not st.session_state.show_guide
+
+        if st.session_state.show_guide:
+            st.write(
+                "1. 초록색 입력창에 원하는 카페의 분위기나 조건을 작성한다.\n"
+                "2. 작성을 완료하면 '검색하기'버튼을 누른다.\n"
+                "3. 결과가 나오면 원하는 카페 칸에 '지도보기'를 누르면 네이버 길찾기로 이동한다."
+            )
+
+        # 검색 버튼
+        st.markdown('<div class="button-container">', unsafe_allow_html=True)
+        search_clicked = st.button("검색하기", type="primary")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if search_clicked:
+            st.session_state.search_clicked = True
+            query = vibe.strip()
+
+            if not query:
+                st.warning("검색어를 입력해주세요.")
+                st.session_state.search_results = []
+            else:
+                try:
+                    model, processor = load_model()
+                    index = load_index()
+                    image_paths = load_image_paths()
+
+                    text_results = search_by_text(
+                        model, processor, index, image_paths, query
+                    )
+
+                    st.session_state.search_results = text_results
+
+                except Exception as exc:
+                    st.error(f"검색 중 오류가 발생했습니다: {exc}")
+                    st.session_state.search_results = []
+
+        # 결과 출력
+        if st.session_state.search_results:
+            num_results = st.slider(
+                "보고 싶은 카페 개수",
+                1,
+                len(st.session_state.search_results),
+                min(20, len(st.session_state.search_results))
+            )
+
+            st.write("### 추천 카페")
+
+            for cafe in st.session_state.search_results[:num_results]:
+                render_result(cafe)
+
+        elif st.session_state.search_clicked:
+            st.info("조건에 맞는 카페를 찾지 못했습니다.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+# =========================
+# ✅ 모델 설명 페이지
+# =========================
+elif st.session_state.page == "about":
+
+    st.title("📄 모델 설명")
+
+    col_left, col_right = st.columns([1, 1])
+
+    # =========================
+    # ✅ 왼쪽: 기술 설명
+    # =========================
+    with col_left:
+        st.write("""
+        ### 🔍 사용한 기술
+
+        #### 1. CLIP (Contrastive Language-Image Pretraining)
+        - 이미지와 텍스트를 같은 벡터 공간으로 변환
+        - "분위기" 같은 추상적인 표현 검색 가능
+
+        #### 2. LoRA (Low-Rank Adaptation)
+        - CLIP을 카페 데이터에 맞게 미세조정
+        - 적은 데이터로 효율적인 학습
+
+        #### 3. FAISS
+        - 벡터 유사도 검색 엔진
+        - 빠른 이미지 검색 가능
+
+        #### 4. PostgreSQL
+        - 카페 정보 및 이미지 메타데이터 저장
+        
+        #### 5. NeonDB
+        - PostgreSQL을 편하게 사용하기 위해 사용
+
+        ### 🔄 전체 흐름
+        사용자 입력 → 텍스트 임베딩 → FAISS 검색 → DB 매칭 → 결과 출력
+        """)
+
+    # =========================
+    # ✅ 오른쪽: 모델 선택 + 표
+    # =========================
+    with col_right:
+        st.write("""
+        ### 👊 모델 선택
+
+        CLIP 모델에 LoRA를 적용하여 총 5가지 설정으로 파인튜닝을 수행하고, 
+        각 모델의 성능을 image recall과 caption 기반 지표를 중심으로 비교하였다. 
+
+        그 결과, 두 번째 실험(lora_weights2)이 가장 우수한 성능을 보여 
+        최종 모델로 선정하였다.
+        """)
+
+        import pandas as pd
+
+        data = {
+            "Model": ["weights1", "weights2✔️", "weights3", "weights4", "weights5"],
+            "Recall@1": [0.7125, 0.7688, 0.7250, 0.7312, 0.7250],
+            "Recall@5": [0.9062, 0.9062, 0.9000, 0.9000, 0.9000],
+            "Recall@10": [0.9375, 0.9563, 0.9563, 0.9563, 0.9563],
+            "Caption Loss": [0.8717, 0.7981, 0.8136, 0.8090, 0.8179],
+            "Image Acc": [0.7063, 0.6937, 0.6813, 0.6937, 0.6875],
+            "Text Acc": [0.7125, 0.6937, 0.6500, 0.6562, 0.6687],
+        }
+
+        df = pd.DataFrame(data)
+
+        st.subheader("📊 LoRA 모델 성능 비교")
+        st.dataframe(
+            df.style
+              .highlight_max(subset=["Recall@1","Recall@5","Recall@10","Image Acc","Text Acc"],axis=0)
+              .highlight_min(subset=["Caption Loss"], axis=0)
+        )
+        st.success("✔ 최종 모델: lora_weights2 (Recall@1 + Caption 성능 최고)")
+        st.caption("※ Recall@1이 가장 중요한 기준이며, Caption 성능을 함께 고려하여 모델을 선정함")
+
+    if st.button("← 돌아가기"):
+        st.session_state.page = "main"

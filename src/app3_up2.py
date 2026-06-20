@@ -190,6 +190,18 @@ def build_local_result(vector_id, image_paths):
         "caption": "",
     }
 
+def score_to_percent(score, index):
+    metric_type = getattr(index, "metric_type", None)
+
+    if metric_type == faiss.METRIC_L2:
+        # Embeddings are normalized, so squared L2 distance is usually 0..4.
+        percent = (1 - min(max(score, 0.0), 4.0) / 4) * 100
+    else:
+        # Inner product on normalized embeddings is cosine similarity, -1..1.
+        percent = ((min(max(score, -1.0), 1.0) + 1) / 2) * 100
+
+    return round(percent, 1)
+
 
 def search_by_text(model, processor, index, image_paths, query, top_k=50):
     if not query.strip():
@@ -222,6 +234,7 @@ def search_by_text(model, processor, index, image_paths, query, top_k=50):
         result = result or build_local_result(vector_id, image_paths)
         if result:
             result["score"] = score
+            result["score_percent"] = score_to_percent(score, index)
             results.append(result)
 
     # 카페 단위로 중복 제거 (유사도가 가장 높은 이미지 1장만 대표로 남김)
@@ -345,8 +358,10 @@ def render_result(cafe):
             st.write(f"[지도 보기]({cafe['map_url']})")
         if cafe["caption"]:
             st.caption(cafe["caption"])
+        if "score_percent" in cafe:
+            st.caption(f"검색어와의 유사도: {cafe['score_percent']}%")
 
-# ✅ 페이지 상태
+# 페이지 상태
 if "page" not in st.session_state:
     st.session_state.page = "main"
 
@@ -355,14 +370,14 @@ render_styles()
 
 
 
-# ✅ 상단 버튼 (오른쪽)
+# 상단 버튼 (오른쪽)
 top_left, top_right = st.columns([9, 1])
 with top_right:
     if st.button("📄 모델 설명"):
         st.session_state.page = "about"
 
 # =========================
-# ✅ 메인 페이지
+# 메인 페이지
 # =========================
 if st.session_state.page == "main":
 
@@ -389,7 +404,7 @@ if st.session_state.page == "main":
             label_visibility="collapsed",
         )
 
-        # ✅ 안내 토글
+        # 안내 토글
         if "show_guide" not in st.session_state:
             st.session_state.show_guide = False
 
@@ -455,7 +470,7 @@ if st.session_state.page == "main":
 
 
 # =========================
-# ✅ 모델 설명 페이지
+# 모델 설명 페이지
 # =========================
 elif st.session_state.page == "about":
 
@@ -464,7 +479,7 @@ elif st.session_state.page == "about":
     col_left, col_right = st.columns([1, 1])
 
     # =========================
-    # ✅ 왼쪽: 기술 설명
+    # 왼쪽: 기술 설명
     # =========================
     with col_left:
         st.write("""
@@ -493,7 +508,7 @@ elif st.session_state.page == "about":
         """)
 
     # =========================
-    # ✅ 오른쪽: 모델 선택 + 표
+    # 오른쪽: 모델 선택 + 표
     # =========================
     with col_right:
         st.write("""

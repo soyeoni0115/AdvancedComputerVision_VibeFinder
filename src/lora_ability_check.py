@@ -250,7 +250,7 @@ def zero_shot_classification_eval(model, processor, image_paths, labels, batch_s
     with torch.no_grad():
         text_features = backbone.get_text_features(**text_inputs)
         
-        # --- 💡 추가된 부분: 텍스트 텐서 추출 안전장치 ---
+        # --- 텍스트 텐서 추출 안전장치 ---
         if not isinstance(text_features, torch.Tensor):
             # 텍스트의 경우 'text_embeds' 라는 이름으로 주로 담겨 있습니다.
             if hasattr(text_features, "text_embeds") and text_features.text_embeds is not None:
@@ -328,10 +328,10 @@ def main():
                 print(f"{name}: {value}")
 
     # =========================
-    # 🔥 추가: Base 모델 비교
+    # Base 모델 비교
     # =========================
     print("\n==============================")
-    print("🔍 Base CLIP 비교 평가 시작")
+    print("Base CLIP 비교 평가 시작")
     print("==============================")
 
     base_model, base_processor = load_base_model()
