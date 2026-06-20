@@ -1,3 +1,4 @@
+# 방향 수정 전 네이버 검색 api로 카페 이름, 주소, 길찾기 링크, 이미지 모두 가져오던 코드
 import os
 import requests
 import urllib.request
@@ -196,7 +197,7 @@ if __name__ == "__main__":
                 if keyword not in db_metadata[cafe_key]["search_keywords"]:
                     db_metadata[cafe_key]["search_keywords"].append(keyword)
                     
-                print(f"⚠️ 중복 패스: {clean_name} -> 키워드 '{keyword}' 추가 완료")
+                print(f"중복 패스: {clean_name} -> 키워드 '{keyword}' 추가 완료")
                 continue
 
             # =========================

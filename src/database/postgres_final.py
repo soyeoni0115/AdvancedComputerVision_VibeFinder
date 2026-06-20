@@ -1,3 +1,4 @@
+# db의 cafe_final_images 테이블을 처음 생성하고, raw폴더의 이미지들을 업로드하는 코드
 import os
 from pathlib import Path
 
@@ -16,7 +17,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_engine(DATABASE_URL)
 
-IMAGE_DIR = Path("data/all_raw")
+IMAGE_DIR = Path("data/raw")
 
 
 # ==========================================

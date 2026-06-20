@@ -1,20 +1,9 @@
 #data/raw/
-data/raw_old
-test.py
-sync_meta.py
-data/metadata.json
 data/all_raw
 data/all_train
 data/all_valid
 data/raw
 data/raw_renamed
-
-models/lora_weights
-models/lora_weights3
-demo.py
-tutorial.py
-trim_cafe.py
-entry_iframe.html
 
 # Image/data artifacts
 data/processed/
@@ -24,13 +13,9 @@ data/processed/valid/unseen/
 data/train_aug/
 data/train_aug_2/
 
-src/app_temp.py
 data/train
 data/valid
 data/metadata_updated.json
-rebuild.py
-split_data.py
-rename.py
 
 models/lora_weights
 models/lora_weights2
