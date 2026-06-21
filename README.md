@@ -45,7 +45,7 @@
 
 ### 개발 환경
 - Python 3.13 (3.13.7)
-- OS: Windows 11 (다른 OS에서도 동작 가능)
+- OS: Windows 11
 - PyTorch는 CPU 버전(`torch==2.12.0+cpu`)으로 설치되어 있으며, GPU(CUDA) 환경에서는 자동으로 GPU를 사용함.
 
 ### 핵심 라이브러리
