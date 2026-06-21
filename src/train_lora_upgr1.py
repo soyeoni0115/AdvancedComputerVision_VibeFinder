@@ -6,7 +6,7 @@ from tqdm import tqdm
 from transformers import CLIPModel, CLIPProcessor
 from torch.utils.data import DataLoader
 
-from train_lora import (
+from train_lora_first import (
     CafeDataset,
     PROJECT_ROOT,
     collate_fn,

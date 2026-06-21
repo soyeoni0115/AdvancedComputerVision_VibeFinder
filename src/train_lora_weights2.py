@@ -12,7 +12,7 @@ from database.postgres_final import DATABASE_URL
 # ---------------------------
 # 0. 설정
 # ---------------------------
-IMAGE_DIR = "cafe_images"
+IMAGE_DIR = "cafe_final_images"
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

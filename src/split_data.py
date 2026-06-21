@@ -72,4 +72,4 @@ for cafe in seen_cafes:
             os.path.join(VALID_SEEN_DIR, cafe, img)
         )
 
-print("✅ split 완료")
+print("split 완료")
