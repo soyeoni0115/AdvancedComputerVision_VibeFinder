@@ -15,12 +15,14 @@ from PIL import Image
 
 st.set_page_config(page_title="Vibe Finder", layout="wide")
 
+# ── 경로 및 디바이스 설정 
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_IMAGE_DIR = BASE_DIR / "data" / "raw"
 INDEX_PATH = BASE_DIR / "faiss_vibe.index"
 PATHS_PATH = BASE_DIR / "paths.npy"
 LORA_PATH = BASE_DIR / "models" / "lora_weights2"
-
+ 
+# GPU가 사용 가능한 경우 CUDA를, 아닌 경우 CPU를 사용
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 DB_CONFIG = DATABASE_URL
@@ -71,6 +73,12 @@ def crop_to_16_9(image):
         return image.crop((0, top, width, bottom))
 
 def run_query(query, params=()):
+
+    #  PostgreSQL 데이터베이스에 SQL 쿼리를 실행하고 결과를 반환한다.
+ 
+    # - DB_CONFIG가 문자열이면 DSN 방식으로, 딕셔너리면 키워드 인자 방식으로 연결한다.
+    # - with 구문을 사용해 트랜잭션 및 커서를 자동으로 정리한다.
+
     if isinstance(DB_CONFIG, str):
         conn = psycopg2.connect(DB_CONFIG)
     else:
@@ -84,22 +92,39 @@ def run_query(query, params=()):
 
 
 def encode_text(model, processor, text):
+
+    # 입력 텍스트를 CLIP 모델을 통해 정규화된 임베딩 벡터로 변환한다.
+ 
+    # 1. processor로 텍스트를 토크나이징하고 텐서로 변환한다.
+    # 2. 모든 입력 텐서를 DEVICE(GPU/CPU)로 이동시킨다.
+    # 3. torch.no_grad() 컨텍스트 안에서 텍스트 피처를 추출한다.
+    # 4. 모델 출력 형태에 따라 text_embeds 또는 pooler_output을 우선 사용한다.
+    # 5. L2 정규화를 적용하여 단위 벡터로 만든 뒤 numpy float32 배열로 반환한다.
+
     inputs = processor(text=[text], return_tensors="pt", padding=True)
     inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
 
     with torch.no_grad():
         text_features = model.get_text_features(**inputs)
-
+    # 모델 출력 타입에 따라 임베딩 텐서를 선택
     if hasattr(text_features, "text_embeds") and text_features.text_embeds is not None:
         text_features = text_features.text_embeds
     elif hasattr(text_features, "pooler_output") and text_features.pooler_output is not None:
         text_features = text_features.pooler_output
-
+    # L2 정규화 → 코사인 유사도 검색에 적합한 단위 벡터로 변환
     text_features = text_features / text_features.norm(dim=-1, keepdim=True)
     return text_features.cpu().numpy().astype("float32")
 
 
 def resolve_image_path(image_path):
+
+    # 이미지 경로 문자열을 실제 파일 시스템 상의 절대 경로(Path 객체)로 변환한다.
+ 
+    # 탐색 우선순위:
+    # 1. 이미 절대 경로이면 그대로 반환한다.
+    # 2. BASE_DIR 기준 상대 경로로 파일이 존재하면 해당 경로를 반환한다.
+    # 3. 위 두 경우 모두 해당하지 않으면 RAW_IMAGE_DIR 아래의 파일명만으로 경로를 구성한다.
+
     path = Path(str(image_path))
     if path.is_absolute():
         return path
@@ -140,6 +165,13 @@ def fetch_cafe_by_image_path(image_path):
 
 
 def fetch_cafes_by_image_paths(image_paths):
+
+    #  여러 이미지 경로를 한 번의 SQL 쿼리로 일괄 조회하여 {경로: 카페정보} 딕셔너리를 반환한다.
+    # - image_paths가 비어 있으면 즉시 빈 딕셔너리를 반환한다.
+    # - CTE(Common Table Expression)를 사용해 전달된 경로 목록을 임시 테이블로 만들고,
+    #   DISTINCT ON으로 경로별 최초 매칭 1건만 선택한다.
+    # - 전체 경로 일치 또는 파일명 LIKE 매칭 두 가지 방식을 모두 시도한다.
+
     if not image_paths:
         return {}
 
@@ -177,6 +209,11 @@ def fetch_cafes_by_image_paths(image_paths):
 
 
 def build_local_result(vector_id, image_paths):
+
+    # DB 매칭에 실패했을 때 로컬 이미지 경로만으로 임시 결과 딕셔너리를 생성한다.
+    # - cafe_id가 없으므로 None으로, cafe_name은 파일명(확장자 제외)으로 설정한다.
+    # - vector_id가 유효 범위를 벗어나면 None을 반환한다.
+
     if vector_id < 0 or vector_id >= len(image_paths):
         return None
 
@@ -191,19 +228,38 @@ def build_local_result(vector_id, image_paths):
     }
 
 def score_to_percent(score, index):
-    metric_type = getattr(index, "metric_type", None)
 
+    #FAISS 유사도 점수(score)를 사람이 읽기 쉬운 퍼센트(0~100%)로 변환한다.
+    # - 인덱스 메트릭이 L2(유클리드 거리)인 경우:
+    #     정규화된 임베딩의 제곱 거리는 0~4 범위이므로, (1 - score/4) * 100 으로 변환한다.
+    # - 그 외(Inner Product, 즉 코사인 유사도)인 경우:
+    #     코사인 유사도는 -1~1 범위이므로, (score + 1) / 2 * 100 으로 변환한다.
+
+    metric_type = getattr(index, "metric_type", None)
     if metric_type == faiss.METRIC_L2:
-        # Embeddings are normalized, so squared L2 distance is usually 0..4.
+            # L2 거리: 0(완전 동일) ~ 4(완전 반대) → 역으로 변환
         percent = (1 - min(max(score, 0.0), 4.0) / 4) * 100
     else:
-        # Inner product on normalized embeddings is cosine similarity, -1..1.
+        #Inner Product(코사인 유사도): -1 ~ 1 → 0 ~ 100%로 선형 변환
         percent = ((min(max(score, -1.0), 1.0) + 1) / 2) * 100
 
     return round(percent, 1)
 
 
 def search_by_text(model, processor, index, image_paths, query, top_k=50):
+
+    # 텍스트 쿼리를 임베딩으로 변환한 뒤 FAISS 인덱스에서 유사 이미지를 검색하고,
+    # 카페 단위로 중복을 제거한 최종 결과 목록을 반환한다.
+ 
+    # 처리 흐름:
+    # 1. query가 빈 문자열이면 빈 리스트를 즉시 반환한다.
+    # 2. encode_text()로 쿼리 임베딩을 생성한다.
+    # 3. FAISS index.search()로 상위 top_k개의 (벡터ID, 유사도) 쌍을 가져온다.
+    # 4. fetch_cafes_by_image_paths()로 DB에서 카페 정보를 일괄 조회한다.
+    #    DB 조회 실패 시 로컬 결과(build_local_result)로 대체한다.
+    # 5. 동일 카페의 여러 이미지가 검색된 경우, 유사도가 가장 높은 이미지 1장만 대표로 남긴다.
+    # 6. 유사도 내림차순으로 정렬하여 반환한다.
+
     if not query.strip():
         return []
 
@@ -211,6 +267,7 @@ def search_by_text(model, processor, index, image_paths, query, top_k=50):
     limit = min(top_k, max(index.ntotal, 1))
     distances, indices = index.search(query_embedding, k=limit)
 
+    # FAISS 결과를 (벡터ID, 이미지경로, 유사도) 튜플 목록으로 정리
     candidates = []
     for vector_id, score in zip(indices[0], distances[0]):
         vector_id = int(vector_id)
@@ -220,6 +277,7 @@ def search_by_text(model, processor, index, image_paths, query, top_k=50):
         image_path = image_paths[vector_id] if vector_id < len(image_paths) else ""
         candidates.append((vector_id, image_path, float(score)))
 
+        # DB에서 이미지 경로에 해당하는 카페 정보 일괄 조회
     try:
         db_results = fetch_cafes_by_image_paths(
             [image_path for _, image_path, _ in candidates if image_path]
@@ -228,6 +286,7 @@ def search_by_text(model, processor, index, image_paths, query, top_k=50):
         st.error(f"DB 조회 실패: {e}")
         db_results = {}
 
+    # DB 결과와 FAISS 점수를 합쳐 결과 리스트 구성
     results = []
     for vector_id, image_path, score in candidates:
         result = db_results.get(str(image_path))
@@ -325,7 +384,20 @@ def render_styles():
         unsafe_allow_html=True,
     )
 
+
 def init_session_state():
+
+    # Streamlit 세션 상태(session_state)의 초기값을 설정한다.
+ 
+    # 앱이 처음 실행되거나 페이지가 새로 고침될 때 필요한 상태 변수들이
+    # 아직 존재하지 않는 경우에만 기본값으로 초기화하여 기존 상태를 덮어쓰지 않는다.
+ 
+    # 초기화 항목:
+    #     recommended_tags (list): 추천 태그 목록 (현재 미사용, 확장 여지)
+    #     selected_tags (list): 사용자가 선택한 태그 목록
+    #     search_results (list): 마지막 검색 결과 목록
+    #     search_clicked (bool): 검색 버튼이 한 번이라도 클릭되었는지 여부
+
     defaults = {
         "recommended_tags": [],
         "selected_tags": [],
@@ -336,7 +408,21 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
+
+
 def render_result(cafe):
+    
+    # 카페 한 곳의 정보를 이미지와 텍스트 두 칸 레이아웃으로 화면에 렌더링한다.
+
+    # 왼쪽 열(col_img):
+    #     - 이미지 파일이 실제로 존재하면 16:9로 크롭하여 표시한다.
+    #     - 경로는 있으나 파일이 없으면 경고 메시지를 출력한다.
+    #     - 경로 자체가 없으면 안내 메시지를 출력한다.
+
+    # 오른쪽 열(col_info):
+    #     - 카페 이름(subheader), 주소, 지도 링크, 이미지 캡션, 유사도 퍼센트를 순서대로 표시한다.
+    #     - map_url과 caption, score_percent는 값이 있을 때만 출력한다.
+
     image_file = resolve_image_path(cafe["image_path"])
     col_img, col_info = st.columns([1, 2])
 
@@ -483,7 +569,7 @@ elif st.session_state.page == "about":
     # =========================
     with col_left:
         st.write("""
-        ### 🔍 사용한 기술
+        ### 사용한 기술
 
         #### 1. CLIP (Contrastive Language-Image Pretraining)
         - 이미지와 텍스트를 같은 벡터 공간으로 변환
@@ -503,7 +589,7 @@ elif st.session_state.page == "about":
         #### 5. NeonDB
         - PostgreSQL을 편하게 사용하기 위해 사용
 
-        ### 🔄 전체 흐름
+        ### 전체 흐름
         사용자 입력 → 텍스트 임베딩 → FAISS 검색 → DB 매칭 → 결과 출력
         """)
 
@@ -512,7 +598,7 @@ elif st.session_state.page == "about":
     # =========================
     with col_right:
         st.write("""
-        ### 👊 모델 선택
+        ### 모델 선택
 
         CLIP 모델에 LoRA를 적용하여 총 5가지 설정으로 파인튜닝을 수행하고, 
         각 모델의 성능을 image recall과 caption 기반 지표를 중심으로 비교하였다. 

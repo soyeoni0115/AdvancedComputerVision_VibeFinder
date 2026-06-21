@@ -78,7 +78,7 @@ for i, img_name in enumerate(tqdm(os.listdir(IMAGE_DIR))):
     out = model.generate(**inputs)
     caption = processor.decode(out[0], skip_special_tokens=True)
 
-    # 🔥 caption 보정
+    # caption 보정
     #caption = "cafe interior, " + caption   -> 버전1
     caption = smart_caption(caption)
 
@@ -106,4 +106,4 @@ conn.commit()
 cur.close()
 conn.close()
 
-print("✅ caption 생성 + DB 저장 완료")
+print("caption 생성 + DB 저장 완료")

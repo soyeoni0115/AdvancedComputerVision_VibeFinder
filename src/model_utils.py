@@ -10,10 +10,10 @@ def get_lora_clip_model():
     model = CLIPModel.from_pretrained(model_id)
     processor = CLIPProcessor.from_pretrained(model_id)
     
-    # 2. LoRA 설정을 정의합니다. 수정필요!!!!!!!!!!!
-    # CLIP 내부의 텍스트/이미지 인코더의 핵심 레이어(q_proj, v_proj)를 타겟으로 잡습니다.
+    # 2. LoRA 설정을 정의합니다. 
+    # CLIP 내부의 텍스트/이미지 인코더의 핵심 레이어(q_proj, v_proj)를 타겟
     lora_config = LoraConfig(
-        r=8,                         # LoRA Rank (값이 작을수록 가볍고 빠름, 3학년 프로젝트용으로 8~16 추천)
+        r=8,                         # LoRA Rank 
         lora_alpha=16,               # Scaling 팩터
         target_modules=["q_proj", "v_proj"],  # CLIP 내부에서 학습할 레이어 지정
         lora_dropout=0.05,
@@ -32,4 +32,4 @@ def get_lora_clip_model():
 if __name__ == "__main__":
     # 코드 작동 테스트
     model, processor = get_lora_clip_model()
-    print("✅ CLIP 모델에 LoRA 연결 성공!")
+    print("CLIP 모델에 LoRA 연결 성공!")

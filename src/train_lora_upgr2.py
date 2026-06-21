@@ -7,7 +7,7 @@ from transformers import CLIPModel, CLIPProcessor
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from train_lora import (
+from train_lora_first import (
     CafeDataset,
     PROJECT_ROOT,
     collate_fn,
@@ -67,7 +67,7 @@ def train_lora_continue():
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=LR,
-        weight_decay=0.01,   # ⭐ 핵심 추가
+        weight_decay=0.01,   # upgr1과 다르게 새롭게 추가
     )
 
     # scheduler 추가

@@ -352,7 +352,7 @@ def main():
     base_zero_shot = zero_shot_classification_eval(
         base_model, base_processor, image_paths, labels, batch_size=args.batch_size
     )
-    print("\n===== 🔥 LoRA vs Base 비교 =====")
+    print("\n===== LoRA vs Base 비교 =====")
 
     for k in retrieval.keys():
         print(f"{k}: LoRA={retrieval[k]:.4f} | Base={base_retrieval[k]:.4f}")

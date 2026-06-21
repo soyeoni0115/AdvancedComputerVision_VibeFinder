@@ -20,7 +20,7 @@ DATA_DIR = BASE_DIR / "data"
 INDEX_PATH = BASE_DIR / "faiss_vibe.index"
 PATHS_PATH = BASE_DIR / "paths.npy"
 
-LORA_PATH = BASE_DIR / "models" / "lora_weights2" # 3에서 2로 변경
+LORA_PATH = BASE_DIR / "models" / "lora_weights2" 
 
 ENV_PATH = BASE_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
