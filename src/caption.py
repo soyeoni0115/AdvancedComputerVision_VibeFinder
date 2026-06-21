@@ -1,3 +1,4 @@
+# 캡션 생성 코드
 import os
 
 from pathlib import Path
@@ -27,7 +28,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-IMAGE_DIR = BASE_DIR / "data" / "all_raw"
+IMAGE_DIR = BASE_DIR / "data" / "raw"
 
 # =====================================
 # DB 연결

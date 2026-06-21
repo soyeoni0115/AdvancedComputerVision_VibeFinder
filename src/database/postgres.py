@@ -1,4 +1,4 @@
-# db의 cafe_final_images 테이블을 처음 생성하고, raw폴더의 이미지들을 업로드하는 가장 초기 코드
+# SQLAlchemy로 Neon PostgreSQL에 테이블을 생성하고 카페 데이터를 저장/조회하는 DB 가장 초기 설정 코드
 import os
 
 from dotenv import load_dotenv

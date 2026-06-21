@@ -1,4 +1,4 @@
-# db의 cafe_final_images 테이블을 처음 생성하고, raw폴더의 이미지들을 업로드하는 코드
+# 네온의 cafe_final_images 테이블에 크롤링한 이미지들을 업로드하고 장수를 세는 코드
 import os
 from pathlib import Path
 
