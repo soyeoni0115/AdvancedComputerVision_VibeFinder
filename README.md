@@ -63,6 +63,7 @@
 
 ### 사전 준비
 - `.env` 파일은 보안을 위해 교수님의 덕성여대 이메일으로(kmlee) 드라이브 접근 권한을 부여하였습니다.
+- 엑세스 권한이 필요하다고 하면 덕성여대 이메일로 로그인하시면 됩니다.
 
 ### 실행 방법
 
@@ -72,12 +73,14 @@
    ```
 
 2. 드라이브에서 다음 파일/폴더 다운로드: `faiss_vibe.index`, `paths.npy`, `data.zip`, `.env`, `lora_weights`
-	-  ```bash
-   드라이브 링크 [https://drive.google.com/drive/folders/147kOYPKwi4XH3OAoRfpE93XxcXX1hIQM?usp=drive_link]
-   ```
+	- 드라이브 링크 [https://drive.google.com/drive/folders/147kOYPKwi4XH3OAoRfpE93XxcXX1hIQM?usp=drive_link]
+   - 방향 바뀌기 전의 코드들도 일부 업로드하였음
+   ```bash
    - `faiss_vibe.index`, `paths.npy`, `.env` → 프로젝트 루트에 위치
+   - 다운받으면 .env가 env 텍스트로 바뀌므로 루트에 위치한 후 파일명 앞에 .을 붙여 .env로 변경해야 할 것으로 보임
    - `data.zip` 압축 해제 후 나온 `raw` 폴더 → `data/raw`에 위치
    - `lora_weights` 폴더 중 lora_weights2 → `models/lora_weights2`에 위치
+   ```
 
 3. 가상환경 생성 및 활성화
    ```bash

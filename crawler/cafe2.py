@@ -13,7 +13,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 # 상위 폴더 경로가 추가된 후 DB 모듈 임포트 진행
-from src.database.postgres_new2 import insert_cafe
+from src.database.postgres_final import insert_cafe
 
 # =========================
 # .env 로드 (상위 폴더의 .env 파일 타겟팅)

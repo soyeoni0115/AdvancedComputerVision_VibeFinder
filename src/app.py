@@ -524,7 +524,6 @@ if st.session_state.page == "main":
                     model, processor = load_model()
                     index = load_index()
                     image_paths = load_image_paths()
-
                     text_results = search_by_text(
                         model, processor, index, image_paths, query
                     )
