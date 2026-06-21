@@ -1,3 +1,4 @@
+# 개선된 인덱싱/임베딩 생성하여 FAISS에 저장
 import os
 import numpy as np
 import faiss
