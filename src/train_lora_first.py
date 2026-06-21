@@ -208,7 +208,7 @@ def train_lora_clip():
 
     best_valid_loss = float("inf")
     patience_count = 0
-    save_path = PROJECT_ROOT / "models" / "lora_weights3"
+    save_path = PROJECT_ROOT / "models" / "lora_weights3"  #이 파일로 lora_weights1,2,3을 모두 실행했었기에 최종 save_path가 lora_weights3으로 저장됨
     log_path = PROJECT_ROOT / "models" / "lora_training_log.csv"
     log_path.parent.mkdir(exist_ok=True)
 
