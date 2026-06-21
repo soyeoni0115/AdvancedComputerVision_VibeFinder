@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_IMAGE_DIR = BASE_DIR / "data" / "raw"
 INDEX_PATH = BASE_DIR / "faiss_vibe.index"
 PATHS_PATH = BASE_DIR / "paths.npy"
-LORA_PATH = BASE_DIR / "models" / "lora_weights3"
+LORA_PATH = BASE_DIR / "models" / "lora_weights2"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

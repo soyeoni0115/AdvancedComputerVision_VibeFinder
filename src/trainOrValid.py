@@ -3,7 +3,7 @@ from pathlib import Path
 
 import psycopg2
 
-from database.postgres_new import DATABASE_URL
+from database.postgres_final import DATABASE_URL
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
